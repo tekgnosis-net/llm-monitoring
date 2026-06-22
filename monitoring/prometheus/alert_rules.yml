@@ -5,9 +5,10 @@ groups:
       # --- Latency creeping toward rspamd's timeout -----------------------
       # rspamd GPT plugin times out at 10s (raise to 15-20s recommended).
       # Warn well before that so you can act before spam checks start failing.
-      # Aggregated by server so the alert fires per host and carries its label.
+      # INTERACTIVE TIER ONLY ({tier="interactive"}) — batch/long-context hosts
+      # are exempt; their long prefills legitimately exceed this. Per-server.
       - alert: VllmLatencyApproachingRspamdTimeout
-        expr: histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket[5m])) by (le, server)) > 6
+        expr: histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket{tier="interactive"}[5m])) by (le, server)) > 6
         for: 2m
         labels: { severity: warning }
         annotations:
@@ -15,7 +16,7 @@ groups:
           description: "p95 e2e latency is {{ $value | humanize }}s for 2m+ on {{ $labels.server }}. rspamd's GPT calls (10s timeout) are at risk under contention. Check for a long-context job hogging prefill or sustained high concurrency."
 
       - alert: VllmLatencyCritical
-        expr: histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket[5m])) by (le, server)) > 9
+        expr: histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket{tier="interactive"}[5m])) by (le, server)) > 9
         for: 1m
         labels: { severity: critical }
         annotations:
@@ -25,12 +26,27 @@ groups:
       # --- Time to first token (prefill saturation) -----------------------
       # High TTFT usually means a big prompt is mid-prefill, blocking others.
       - alert: VllmHighTimeToFirstToken
-        expr: histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, server)) > 5
+        expr: histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket{tier="interactive"}[5m])) by (le, server)) > 5
         for: 2m
         labels: { severity: warning }
         annotations:
           summary: "vLLM TTFT p95 > 5s on {{ $labels.server }}"
           description: "Time-to-first-token p95 is {{ $value | humanize }}s on {{ $labels.server }}. Likely a long-context prompt saturating prefill compute. Short requests (rspamd/Hindsight) are waiting behind it."
+
+      # --- Decode speed (TPOT) — workload-agnostic, fires on ALL tiers ----
+      # Time-per-output-token is decode-bound, so a long prefill / consolidation
+      # job does NOT inflate it (unlike e2e/TTFT) — this is the right signal for
+      # a hybrid endpoint. MEASURE your baseline:
+      #   histogram_quantile(0.95, sum(rate(vllm:time_per_output_token_seconds_bucket[5m])) by (le))
+      # and set the threshold to ~2x it; 0.1s (~10 tok/s) is a placeholder.
+      # (vLLM V1 also exposes vllm:inter_token_latency_seconds_bucket as an alias.)
+      - alert: VllmDecodeSlow
+        expr: histogram_quantile(0.95, sum(rate(vllm:time_per_output_token_seconds_bucket[5m])) by (le, server)) > 0.1
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "vLLM decode slow — TPOT p95 > 100ms on {{ $labels.server }}"
+          description: "Time-per-output-token p95 is {{ $value | humanize }}s on {{ $labels.server }} for 3m+. Decode throughput is degraded (contention, thermal throttling, or memory pressure) and affects every request regardless of prompt size. Tune the threshold to ~2x your measured baseline."
 
       # --- Requests queueing (concurrency ceiling hit) --------------------
       # max-num-seqs is 12. Sustained waiting means demand exceeds slots.

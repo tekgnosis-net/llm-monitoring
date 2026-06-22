@@ -15,6 +15,17 @@ mkdir -p "$PROM_TARGETS" "$AM_DIR"
 VLLM_HOSTS="${VLLM_HOSTS:-}"
 LLAMACPP_HOSTS="${LLAMACPP_HOSTS:-}"
 GPU_HOSTS="${GPU_HOSTS:-}"
+BATCH_SERVERS="${BATCH_SERVERS:-}"
+
+# A server is tier=batch if its name appears in BATCH_SERVERS, else interactive.
+# The tier label gates only the interactive e2e-latency/TTFT alerts; queue, KV,
+# and decode-speed (TPOT) alerts apply to every tier.
+is_batch() {
+  case ",$BATCH_SERVERS," in
+    *",$1,"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 # --- Prometheus file_sd targets ---------------------------------------------
 # Entries are "name:ip" or "name:ip:port". An empty list yields a valid empty
@@ -32,10 +43,11 @@ build_llm() {
     ip=$(printf '%s' "$entry" | cut -d: -f2)
     port=$(printf '%s' "$entry" | cut -d: -f3)
     [ -n "$port" ] || port="$default_port"
+    if is_batch "$name"; then tier=batch; else tier=interactive; fi
     [ "$first" -eq 1 ] || printf ',\n' >> "$out"
     first=0
-    printf '  { "targets": ["%s:%s"], "labels": { "server": "%s", "backend": "%s" } }' \
-      "$ip" "$port" "$name" "$backend" >> "$out"
+    printf '  { "targets": ["%s:%s"], "labels": { "server": "%s", "backend": "%s", "tier": "%s" } }' \
+      "$ip" "$port" "$name" "$backend" "$tier" >> "$out"
   done
   unset IFS
   printf '\n]\n' >> "$out"
@@ -75,4 +87,4 @@ sed \
   -e "s|__ALERT_EMAIL_CRITICAL__|${ALERT_EMAIL_CRITICAL}|g" \
   /templates/alertmanager.tmpl.yml > "$AM_DIR/alertmanager.yml"
 
-echo "config-render: vllm=[$VLLM_HOSTS] llamacpp=[$LLAMACPP_HOSTS] gpu=[$GPU_HOSTS] + alertmanager.yml"
+echo "config-render: vllm=[$VLLM_HOSTS] llamacpp=[$LLAMACPP_HOSTS] gpu=[$GPU_HOSTS] batch=[$BATCH_SERVERS] + alertmanager.yml"
