@@ -40,7 +40,7 @@ services:
       config-render:
         condition: service_completed_successfully
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"   # operator UI only; Grafana queries via the internal network
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
@@ -58,10 +58,12 @@ services:
       config-render:
         condition: service_completed_successfully
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"   # operator UI only; Prometheus pushes via the internal network
     volumes:
-      - rendered:/etc/shared:ro          # rendered alertmanager.yml + smtp_password
+      - rendered:/etc/shared:ro          # rendered alertmanager.yml (config only)
       - alertmanager-data:/alertmanager
+    secrets:
+      - smtp_password                     # mounted at /run/secrets/smtp_password (tmpfs, not persisted)
     command:
       - "--config.file=/etc/shared/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
@@ -79,7 +81,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}   # from .env
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:?set GF_ADMIN_PASSWORD in monitoring/.env}   # fail closed — no insecure default
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -91,3 +93,9 @@ volumes:
   prometheus-data:
   grafana-data:
   alertmanager-data:
+
+secrets:
+  # SMTP password injected from monitoring/.env at runtime; mounted on tmpfs,
+  # never written to the persisted `rendered` volume or shared with Prometheus.
+  smtp_password:
+    environment: SMTP_PASSWORD

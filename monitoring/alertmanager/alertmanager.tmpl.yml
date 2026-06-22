@@ -1,8 +1,8 @@
 # ============================================================================
 # Alertmanager template — rendered by config-render (sed) from monitoring/.env
 # into the shared volume as alertmanager.yml. The placeholder tokens below are
-# substituted; the SMTP password is written separately to a smtp_password file
-# and referenced via smtp_auth_password_file, so it never appears inline here.
+# substituted; the SMTP password is injected at runtime as a Docker secret
+# (mounted at /run/secrets/smtp_password), so it never appears inline here.
 # ============================================================================
 
 global:
@@ -10,7 +10,7 @@ global:
   smtp_smarthost: '__SMTP_SMARTHOST__'
   smtp_from: '__SMTP_FROM__'
   smtp_auth_username: '__SMTP_USER__'
-  smtp_auth_password_file: '/etc/shared/alertmanager/smtp_password'
+  smtp_auth_password_file: '/run/secrets/smtp_password'
   smtp_require_tls: true
 
 route:

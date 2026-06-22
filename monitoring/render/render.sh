@@ -33,9 +33,9 @@ build_targets 8000 "$PROM_TARGETS/vllm.json"
 build_targets 9400 "$PROM_TARGETS/dcgm.json"
 
 # --- Alertmanager config -----------------------------------------------------
-# The SMTP password goes to its own file (referenced via smtp_auth_password_file)
-# so it never appears in YAML; only non-secret fields are substituted.
-printf '%s' "$SMTP_PASSWORD" > "$AM_DIR/smtp_password"
+# Only non-secret fields are substituted here. The SMTP password is injected at
+# runtime as a Docker secret (mounted at /run/secrets/smtp_password by compose),
+# so it never passes through this render step or the persisted volume.
 sed \
   -e "s|__SMTP_SMARTHOST__|${SMTP_SMARTHOST}|g" \
   -e "s|__SMTP_FROM__|${SMTP_FROM}|g" \
