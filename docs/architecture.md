@@ -44,10 +44,13 @@ Full rationale and the rejected per-agent-Prometheus alternative:
 ## Labels
 
 Every series carries a `server` label (the human name from the `*_HOSTS` lists).
-LLM endpoints also carry `backend`. These drive:
+LLM endpoints also carry `backend` (`vllm`/`llamacpp`) and `tier`
+(`interactive`/`batch`, from `BATCH_SERVERS`). These drive:
 
 - **Dashboards** — per-host repeating rows via `label_values(<metric>, server)`.
-- **Alerts** — each alert fires per host and names it via `{{ $labels.server }}`.
+- **Alerts** — each fires per host and names it via `{{ $labels.server }}`; `tier`
+  gates the interactive-only e2e/TTFT alerts, while decode-speed (TPOT), queue, and
+  KV alerts apply to every tier (see [alerts.md](alerts.md)).
 
 ## Config rendering
 

@@ -31,9 +31,9 @@ GPU servers (agent/)                    Monitoring host (monitoring/)
 ```
 
 Prometheus labels every target with `server=<name>` and (for LLM endpoints)
-`backend=vllm|llamacpp`. These labels drive both the dashboard's per-host
-repeating rows and the per-host alert annotations — they are load-bearing, not
-cosmetic.
+`backend=vllm|llamacpp` plus `tier=interactive|batch`. These labels drive the
+dashboard's per-host repeating rows and per-host/per-tier alert behaviour — they
+are load-bearing, not cosmetic.
 
 ## Commands
 
@@ -128,6 +128,10 @@ commit a real `.env`.
   vLLM latency warns at p95 > 6s / critical > 9s (rspamd GPT plugin times out at 10s);
   GPU temp warns at 80C (3090 throttles ~83C); VRAM at 23 GiB (of 24). All alerts
   aggregate `by (..., server)` so they fire per host. Validate edits with `promtool`.
+- **Workload tiers:** generative hosts carry `tier=interactive|batch` (batch if named in
+  `BATCH_SERVERS`). `tier` gates only the e2e-latency/TTFT alerts; queue, KV, failures, down,
+  and the TPOT decode-speed alert (`VllmDecodeSlow`, `vllm:time_per_output_token_seconds`)
+  fire on all tiers. TPOT is the robust signal for hybrid endpoints and cross-hardware.
 - **Reachability is the deploy-time dependency:** the monitoring host must reach each
   GPU host on `:8000`/`:8080`/`:9400`. Exporters have no auth — restrict via firewall.
 - **Ports** default per backend (vLLM 8000, llama.cpp 8080, DCGM 9400); `*_HOSTS`

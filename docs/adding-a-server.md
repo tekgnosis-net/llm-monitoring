@@ -40,6 +40,22 @@ GPU_HOSTS=...,gpu-f:192.168.1.55
 List it in both `VLLM_HOSTS` and `LLAMACPP_HOSTS` (the ports differ, so the two
 endpoints are distinct). It will show up in both the vLLM and llama.cpp sections.
 
+## Mark a server as batch tier
+
+By default every generative host is `tier=interactive` and gets the e2e-latency
+and TTFT alerts. For a batch / long-context host (e.g. Hindsight consolidation),
+add its `name` to `BATCH_SERVERS` so those two alerts are skipped — it still keeps
+queue, KV, decode-speed (TPOT), failure, and down alerts:
+
+```
+BATCH_SERVERS=consolidator,bigctx
+```
+
+then `docker compose up -d`. A *hybrid* endpoint (one model serving both
+interactive and batch traffic) can't be split by metrics — leave it `interactive`
+and lean on the TPOT/queue/KV alerts, or run the batch workload on a separate
+endpoint you can tag. See [alerts.md](alerts.md) for the tier model.
+
 ## Remove a host
 
 Delete its entry from the relevant `*_HOSTS` lists and `docker compose up -d`.

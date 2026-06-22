@@ -28,7 +28,7 @@ That's the entire agent. It's stateless and secret-free.
 ```bash
 cd monitoring
 cp .env.example .env
-$EDITOR .env            # set VLLM_HOSTS / LLAMACPP_HOSTS / GPU_HOSTS, GF_ADMIN_PASSWORD, SMTP_*
+$EDITOR .env            # set *_HOSTS (+ optional BATCH_SERVERS), GF_ADMIN_PASSWORD, SMTP_*
 docker compose up -d
 ```
 
@@ -39,6 +39,7 @@ docker compose up -d
 | `VLLM_HOSTS` | `name:ip[:port]` list of vLLM endpoints (port default 8000) |
 | `LLAMACPP_HOSTS` | `name:ip[:port]` list of llama.cpp endpoints (port default 8080) |
 | `GPU_HOSTS` | `name:ip` list of all GPU hosts running the DCGM agent |
+| `BATCH_SERVERS` | optional: server names to mark `tier=batch` (exempt from the interactive e2e/TTFT alerts) |
 | `GF_ADMIN_PASSWORD` | Grafana admin password (**required** — no default) |
 | `SMTP_*`, `ALERT_EMAIL_*` | Alertmanager email delivery |
 
