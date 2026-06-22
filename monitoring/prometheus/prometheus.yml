@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 5s          # vLLM gauges move fast; 5s keeps graphs responsive
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+# Deliver alerts to the co-located Alertmanager (same compose network).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # Targets are rendered from GPU_HOSTS (.env) by the config-render init step
+  # into file_sd JSON; Prometheus hot-reloads them, so adding a server needs no
+  # restart of Prometheus — just a re-render (`docker compose up -d`).
+  - job_name: vllm
+    metrics_path: /metrics
+    file_sd_configs:
+      - files: ['/etc/shared/prometheus/targets/vllm.json']
+
+  - job_name: dcgm-gpu
+    file_sd_configs:
+      - files: ['/etc/shared/prometheus/targets/dcgm.json']

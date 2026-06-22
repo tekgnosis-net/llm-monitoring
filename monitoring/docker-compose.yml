@@ -1,0 +1,93 @@
+# ============================================================================
+# Monitoring HOST stack — deploy on the dedicated monitoring server.
+#
+#   config-render (init) -> Prometheus -> Grafana / Alertmanager
+#
+# Central Prometheus scrapes every GPU server (vLLM :8000 + DCGM :9400) over the
+# LAN, labelling each target with its server name. Grafana renders consolidated
+# dashboards (one datasource, $server dropdown). Alertmanager emails alerts.
+#
+# Setup:
+#   cp .env.example .env   &&   edit .env   (GPU_HOSTS, Grafana pw, SMTP)
+#   docker compose up -d
+# UIs: Grafana http://<host>:3000 · Prometheus :9090 · Alertmanager :9093
+#
+# Config build: the `config-render` init container expands ./.env into Prometheus
+# file_sd target lists and the Alertmanager config (SMTP password as a file),
+# writing them into the shared `rendered` volume BEFORE the main services start.
+# Add/remove a GPU server = edit GPU_HOSTS in .env, then `docker compose up -d`.
+# ============================================================================
+
+services:
+  # Renders ./.env -> scrape targets + alertmanager.yml into the shared volume,
+  # then exits. Prometheus/Alertmanager wait for it to finish.
+  config-render:
+    image: busybox:1.36
+    container_name: vllm-config-render
+    restart: "no"
+    env_file: .env
+    volumes:
+      - rendered:/etc/shared
+      - ./render/render.sh:/render.sh:ro
+      - ./alertmanager/alertmanager.tmpl.yml:/templates/alertmanager.tmpl.yml:ro
+    command: ["sh", "/render.sh"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vllm-prometheus
+    restart: unless-stopped
+    depends_on:
+      config-render:
+        condition: service_completed_successfully
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - rendered:/etc/shared:ro          # rendered file_sd targets live here
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: vllm-alertmanager
+    restart: unless-stopped
+    depends_on:
+      config-render:
+        condition: service_completed_successfully
+    ports:
+      - "9093:9093"
+    volumes:
+      - rendered:/etc/shared:ro          # rendered alertmanager.yml + smtp_password
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/shared/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    extra_hosts:
+      # Reach a mailcow SMTP relay running elsewhere on the host, if applicable.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vllm-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}   # from .env
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  rendered:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:

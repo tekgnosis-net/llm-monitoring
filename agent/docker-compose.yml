@@ -1,0 +1,35 @@
+# ============================================================================
+# Monitoring AGENT — deploy on each GPU server that runs vLLM.
+#
+# Ships only the NVIDIA DCGM exporter (GPU temp/power/VRAM/util on :9400).
+# vLLM already exposes its own Prometheus metrics on :8000/metrics, so nothing
+# else is needed on the GPU host — the central monitoring stack scrapes BOTH
+# ports across the LAN.
+#
+# Run:    docker compose up -d
+# Verify: curl http://localhost:9400/metrics
+#
+# Reachability: the monitoring host must be able to reach THIS host on :9400
+# (DCGM) and :8000 (vLLM). After starting, register this host by adding a
+# "name:ip" pair to GPU_HOSTS in the monitoring stack's .env.
+#
+# This stack is stateless and secret-free — safe to commit and deploy as-is.
+# ============================================================================
+
+services:
+  dcgm-exporter:
+    image: nvidia/dcgm-exporter:latest
+    container_name: dcgm-exporter
+    restart: unless-stopped
+    runtime: nvidia
+    ports:
+      - "9400:9400"
+    cap_add:
+      - SYS_ADMIN              # DCGM needs this to read GPU telemetry
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]         # the passthrough GPU on this host
+              capabilities: [gpu, utility]

@@ -1,0 +1,106 @@
+groups:
+  - name: vllm_serving
+    rules:
+
+      # --- Latency creeping toward rspamd's timeout -----------------------
+      # rspamd GPT plugin times out at 10s (raise to 15-20s recommended).
+      # Warn well before that so you can act before spam checks start failing.
+      # Aggregated by server so the alert fires per host and carries its label.
+      - alert: VllmLatencyApproachingRspamdTimeout
+        expr: histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket[5m])) by (le, server)) > 6
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "vLLM p95 end-to-end latency > 6s on {{ $labels.server }}"
+          description: "p95 e2e latency is {{ $value | humanize }}s for 2m+ on {{ $labels.server }}. rspamd's GPT calls (10s timeout) are at risk under contention. Check for a long-context job hogging prefill or sustained high concurrency."
+
+      - alert: VllmLatencyCritical
+        expr: histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket[5m])) by (le, server)) > 9
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "vLLM p95 latency > 9s on {{ $labels.server }} — rspamd timeouts imminent"
+          description: "p95 e2e latency is {{ $value | humanize }}s on {{ $labels.server }}. rspamd GPT spam checks will start timing out. Reschedule long-context jobs or reduce client concurrency now."
+
+      # --- Time to first token (prefill saturation) -----------------------
+      # High TTFT usually means a big prompt is mid-prefill, blocking others.
+      - alert: VllmHighTimeToFirstToken
+        expr: histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket[5m])) by (le, server)) > 5
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "vLLM TTFT p95 > 5s on {{ $labels.server }}"
+          description: "Time-to-first-token p95 is {{ $value | humanize }}s on {{ $labels.server }}. Likely a long-context prompt saturating prefill compute. Short requests (rspamd/Hindsight) are waiting behind it."
+
+      # --- Requests queueing (concurrency ceiling hit) --------------------
+      # max-num-seqs is 12. Sustained waiting means demand exceeds slots.
+      - alert: VllmRequestsQueueing
+        expr: vllm:num_requests_waiting > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "vLLM requests waiting for 5m+ on {{ $labels.server }}"
+          description: "{{ $value }} request(s) queued (waiting) continuously on {{ $labels.server }}. The slot ceiling is a sustained bottleneck — consider raising --max-num-seqs (KV pool has ample room) or capping a client's concurrency."
+
+      # --- KV cache pressure (preemption risk) ----------------------------
+      # Measured pool ~261k tokens; short requests sat at ~6%. Sustained high
+      # usage means long-context requests are filling the pool -> preemption.
+      - alert: VllmKvCacheHigh
+        expr: vllm:kv_cache_usage_perc > 0.85
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "vLLM KV cache usage > 85% on {{ $labels.server }}"
+          description: "KV cache at {{ $value | humanizePercentage }} for 3m+ on {{ $labels.server }}. Approaching preemption/recompute territory. Multiple long-context requests are likely running concurrently."
+
+      # --- Request failures ------------------------------------------------
+      - alert: VllmRequestFailures
+        expr: sum(rate(vllm:request_failure_total[5m])) by (server) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "vLLM is returning request failures on {{ $labels.server }}"
+          description: "vLLM recorded {{ $value | humanize }} failures/sec over 5m on {{ $labels.server }}. Check engine logs (aborts, OOM, or malformed requests from a client)."
+
+      # --- vLLM unreachable ------------------------------------------------
+      - alert: VllmDown
+        expr: up{job="vllm"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "vLLM metrics endpoint is down on {{ $labels.server }}"
+          description: "Prometheus cannot scrape vLLM on {{ $labels.server }} for 1m+. The server may have crashed or the container is restarting. Hindsight and rspamd GPT checks against this host are failing."
+
+  - name: gpu_health
+    rules:
+
+      # --- GPU thermal -----------------------------------------------------
+      # 3090 throttles ~83C; warn earlier. Relevant in a Proxmox box with
+      # potentially constrained airflow around a passthrough card.
+      - alert: GpuTemperatureHigh
+        expr: DCGM_FI_DEV_GPU_TEMP > 80
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "GPU temperature > 80C on {{ $labels.server }}"
+          description: "GPU on {{ $labels.server }} at {{ $value }}C for 3m+. Approaching the 3090's throttle point (~83C). Check chassis airflow / fan curves; sustained throttling will cut throughput."
+
+      # --- VRAM headroom ---------------------------------------------------
+      # 3090 = 24576 MiB. Weights+overhead+KV should sit well under this;
+      # near-full sustained means something is over-allocating.
+      - alert: GpuMemoryNearFull
+        expr: DCGM_FI_DEV_FB_USED > 23000
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "GPU VRAM > 23 GiB (of 24) on {{ $labels.server }}"
+          description: "VRAM used is {{ $value }} MiB for 3m+ on {{ $labels.server }}. Very little headroom left on the 24 GiB 3090. Unexpected for this config — investigate before OOM."
+
+      # --- GPU exporter down ----------------------------------------------
+      - alert: DcgmExporterDown
+        expr: up{job="dcgm-gpu"} == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "DCGM GPU exporter is down on {{ $labels.server }}"
+          description: "GPU metrics from {{ $labels.server }} unavailable for 2m+. The dcgm-exporter container may have failed (common with consumer-card/VFIO quirks). vLLM serving is unaffected; only GPU telemetry is lost."

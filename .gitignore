@@ -1,0 +1,13 @@
+# Secrets — live ONLY in .env files, never committed. (.env.example is tracked.)
+.env
+**/.env
+
+# Rendered configs (generated from .env at deploy time by config-render)
+**/rendered/
+
+# Local tooling artifact — symlink into the Claude Code plugin cache
+supertool
+
+# Editor swap files
+*.swp
+.*.swp

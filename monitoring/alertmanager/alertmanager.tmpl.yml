@@ -1,0 +1,47 @@
+# ============================================================================
+# Alertmanager template — rendered by config-render (sed) from monitoring/.env
+# into the shared volume as alertmanager.yml. The placeholder tokens below are
+# substituted; the SMTP password is written separately to a smtp_password file
+# and referenced via smtp_auth_password_file, so it never appears inline here.
+# ============================================================================
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: '__SMTP_SMARTHOST__'
+  smtp_from: '__SMTP_FROM__'
+  smtp_auth_username: '__SMTP_USER__'
+  smtp_auth_password_file: '/etc/shared/alertmanager/smtp_password'
+  smtp_require_tls: true
+
+route:
+  receiver: email-default
+  group_by: ['alertname', 'severity', 'server']
+  group_wait: 30s            # brief batch window so a burst becomes one email
+  group_interval: 5m
+  repeat_interval: 4h        # re-notify every 4h while still firing
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: email-critical
+      group_wait: 10s         # critical: notify fast
+      repeat_interval: 1h
+
+receivers:
+  - name: email-default
+    email_configs:
+      - to: '__ALERT_EMAIL_DEFAULT__'
+        send_resolved: true
+
+  - name: email-critical
+    email_configs:
+      - to: '__ALERT_EMAIL_CRITICAL__'
+        send_resolved: true
+        headers:
+          Subject: '[CRITICAL] vLLM alert: {{ .CommonLabels.alertname }} on {{ .CommonLabels.server }}'
+
+inhibit_rules:
+  # If a server's vLLM is down, silence the latency/queue warnings it spawns
+  # for that SAME server (don't silence other healthy hosts).
+  - source_matchers: [ 'alertname = VllmDown' ]
+    target_matchers: [ 'severity = warning' ]
+    equal: ['server']

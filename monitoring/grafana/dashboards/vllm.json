@@ -1,0 +1,129 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": false,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["vllm", "gpt-oss-20b"],
+  "templating": {
+    "list": [
+      {
+        "name": "server",
+        "label": "Server",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+        "definition": "label_values(server)",
+        "query": { "qryType": 1, "query": "label_values(server)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "title": "vLLM — gpt-oss-20b",
+  "uid": "vllm-gptoss",
+  "panels": [
+    {
+      "title": "Requests: running / waiting",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "vllm:num_requests_running{server=~\"$server\"}", "legendFormat": "running — {{server}}", "refId": "A" },
+        { "expr": "vllm:num_requests_waiting{server=~\"$server\"}", "legendFormat": "waiting — {{server}}", "refId": "B" }
+      ]
+    },
+    {
+      "title": "KV cache usage (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0, "custom": { "fillOpacity": 15, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "vllm:kv_cache_usage_perc{server=~\"$server\"}", "legendFormat": "kv usage — {{server}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Throughput (tokens/sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "fillOpacity": 10, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "rate(vllm:prompt_tokens_total{server=~\"$server\"}[1m])", "legendFormat": "prompt (prefill) — {{server}}", "refId": "A" },
+        { "expr": "rate(vllm:generation_tokens_total{server=~\"$server\"}[1m])", "legendFormat": "generation (decode) — {{server}}", "refId": "B" }
+      ]
+    },
+    {
+      "title": "End-to-end request latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{server=~\"$server\"}[5m])) by (le, server))", "legendFormat": "p50 — {{server}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket{server=~\"$server\"}[5m])) by (le, server))", "legendFormat": "p95 — {{server}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(vllm:e2e_request_latency_seconds_bucket{server=~\"$server\"}[5m])) by (le, server))", "legendFormat": "p99 — {{server}}", "refId": "C" }
+      ]
+    },
+    {
+      "title": "Time to first token (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket{server=~\"$server\"}[5m])) by (le, server))", "legendFormat": "TTFT p95 — {{server}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Successful requests / sec (by finish reason)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "sum(rate(vllm:request_success_total{server=~\"$server\"}[1m])) by (finished_reason, server)", "legendFormat": "{{finished_reason}} — {{server}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "GPU utilization (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0, "custom": { "fillOpacity": 15, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_GPU_UTIL{server=~\"$server\"}", "legendFormat": "{{server}} gpu{{gpu}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "GPU memory used (MiB)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "decmbytes", "custom": { "fillOpacity": 10, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_FB_USED{server=~\"$server\"}", "legendFormat": "{{server}} gpu{{gpu}}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "GPU temp / power",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "vllm-prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 0, "showPoints": "never" } } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_GPU_TEMP{server=~\"$server\"}", "legendFormat": "temp (C) — {{server}}", "refId": "A" },
+        { "expr": "DCGM_FI_DEV_POWER_USAGE{server=~\"$server\"}", "legendFormat": "power (W) — {{server}}", "refId": "B" }
+      ]
+    }
+  ]
+}
