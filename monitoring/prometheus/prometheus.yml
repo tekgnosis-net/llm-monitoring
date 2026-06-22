@@ -1,5 +1,5 @@
 global:
-  scrape_interval: 5s          # vLLM gauges move fast; 5s keeps graphs responsive
+  scrape_interval: 5s          # LLM gauges move fast; 5s keeps graphs responsive
   evaluation_interval: 15s
 
 rule_files:
@@ -12,13 +12,19 @@ alerting:
         - targets: ['alertmanager:9093']
 
 scrape_configs:
-  # Targets are rendered from GPU_HOSTS (.env) by the config-render init step
-  # into file_sd JSON; Prometheus hot-reloads them, so adding a server needs no
-  # restart of Prometheus — just a re-render (`docker compose up -d`).
+  # Targets are rendered from the *_HOSTS lists in .env by the config-render init
+  # step into file_sd JSON (each target carries server + backend labels).
+  # Prometheus hot-reloads them, so adding a server needs no restart — just a
+  # re-render (`docker compose up -d`). An empty list = a job with no targets.
   - job_name: vllm
     metrics_path: /metrics
     file_sd_configs:
       - files: ['/etc/shared/prometheus/targets/vllm.json']
+
+  - job_name: llamacpp        # llama-server must be started with --metrics
+    metrics_path: /metrics
+    file_sd_configs:
+      - files: ['/etc/shared/prometheus/targets/llamacpp.json']
 
   - job_name: dcgm-gpu
     file_sd_configs:

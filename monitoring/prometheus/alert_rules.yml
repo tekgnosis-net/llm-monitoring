@@ -71,6 +71,36 @@ groups:
           summary: "vLLM metrics endpoint is down on {{ $labels.server }}"
           description: "Prometheus cannot scrape vLLM on {{ $labels.server }} for 1m+. The server may have crashed or the container is restarting. Hindsight and rspamd GPT checks against this host are failing."
 
+  - name: llamacpp_serving
+    rules:
+
+      # --- llama.cpp unreachable ------------------------------------------
+      - alert: LlamacppDown
+        expr: up{job="llamacpp"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "llama.cpp metrics endpoint is down on {{ $labels.server }}"
+          description: "Prometheus cannot scrape llama-server on {{ $labels.server }} for 1m+. The server may have crashed, restarted, or been started without --metrics."
+
+      # --- KV cache pressure (preemption / context full) ------------------
+      - alert: LlamacppKvCacheHigh
+        expr: llamacpp:kv_cache_usage_ratio > 0.85
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "llama.cpp KV cache usage > 85% on {{ $labels.server }}"
+          description: "KV cache at {{ $value | humanizePercentage }} for 3m+ on {{ $labels.server }}. Approaching context exhaustion; requests may be deferred or truncated."
+
+      # --- Requests deferred (no free slot) -------------------------------
+      - alert: LlamacppRequestsDeferred
+        expr: llamacpp:requests_deferred > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "llama.cpp deferring requests for 5m+ on {{ $labels.server }}"
+          description: "{{ $value }} request(s) deferred (no free slot) continuously on {{ $labels.server }}. All slots are busy — consider raising --parallel / slot count or reducing client concurrency."
+
   - name: gpu_health
     rules:
 
